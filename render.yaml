@@ -7,7 +7,7 @@ services:
     startCommand: npm start
     healthCheckPath: /api/salud
     envVars:
-      - key: CLASS_CODE
-        sync: false   # Render te pedirá el valor (el código de tu clase)
       - key: NODE_VERSION
         value: "20"
+      - key: SEED
+        value: "false"

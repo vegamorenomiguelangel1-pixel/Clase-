@@ -11,35 +11,83 @@
 <body>
   <!-- Pantalla de ingreso -->
   <section id="login" class="login hidden">
-    <form id="loginForm" class="login-card">
+    <div class="login-card">
       <div class="logo">📚</div>
       <h1>Clase App</h1>
-      <p class="muted">Materias, tareas y chat de nuestro curso</p>
-      <label>Tu nombre
-        <input name="nombre" autocomplete="name" placeholder="Ej: Miguel Ángel" required minlength="2" maxlength="40">
-      </label>
-      <label>Código de la clase
-        <input name="codigo" placeholder="Te lo pasa el delegado" required autocomplete="off">
-      </label>
-      <p id="loginError" class="error"></p>
-      <button class="btn primary block" type="submit">Entrar</button>
-      <p class="hint">Si ya entraste antes, usa el mismo nombre para recuperar tus marcas.</p>
-    </form>
+      <p class="muted">Crea tu clase o únete con un código</p>
+      <div class="seg" role="tablist">
+        <button type="button" id="tabJoin" class="on" role="tab">Unirme a una clase</button>
+        <button type="button" id="tabCreate" role="tab">Crear una clase</button>
+      </div>
+      <form id="joinForm">
+        <label>Tu nombre
+          <input name="nombre" autocomplete="name" placeholder="Ej: Miguel Ángel" required minlength="2" maxlength="40">
+        </label>
+        <label>Código de la clase
+          <input name="codigo" placeholder="Ej: K7MPQ2" required autocomplete="off" maxlength="40" autocapitalize="characters" spellcheck="false">
+        </label>
+        <p id="joinError" class="error"></p>
+        <button class="btn primary block" type="submit">Entrar</button>
+      </form>
+      <form id="createForm" class="hidden">
+        <label>Tu nombre
+          <input name="nombre" autocomplete="name" placeholder="Ej: Miguel Ángel" required minlength="2" maxlength="40">
+        </label>
+        <label>Nombre de la clase
+          <input name="clase" placeholder="Ej: Programación I · 2B" required minlength="2" maxlength="80">
+        </label>
+        <p id="createError" class="error"></p>
+        <button class="btn primary block" type="submit">Crear clase</button>
+      </form>
+      <p class="hint">Dentro de una clase, usa siempre el mismo nombre para recuperar tus marcas.</p>
+    </div>
+  </section>
+
+  <section id="creada" class="login hidden">
+    <div class="login-card">
+      <div class="logo">🎉</div>
+      <h1>Clase creada</h1>
+      <p class="muted" id="creadaNombre"></p>
+      <p>Comparte este código con tus compañeros. Lo necesitan para unirse:</p>
+      <div class="big-code" id="bigCode"></div>
+      <div class="row" style="justify-content:center">
+        <button type="button" class="btn primary" id="copyBig">Copiar código</button>
+        <button type="button" class="btn" id="shareBig">Compartir</button>
+      </div>
+      <button type="button" class="btn primary block" id="enterClass">Entrar a la clase</button>
+      <p class="hint">También queda arriba en la app, por si lo necesitas después. La clase empieza vacía: tú agregas la primera materia.</p>
+    </div>
   </section>
 
   <!-- App -->
   <div id="app" class="hidden">
     <header class="topbar">
-      <a href="#/" class="brand">📚 <span>Clase App</span></a>
-      <nav class="tabs" id="tabs">
-        <a href="#/" data-tab="materias">📘 Materias</a>
-        <a href="#/tareas" data-tab="tareas">✅ Tareas</a>
-        <a href="#/chat" data-tab="chat">💬 Chat <b id="chatBadge" class="badge hidden"></b></a>
-      </nav>
-      <div class="me">
-        <span id="onlineCount" class="online" title="Conectados ahora"></span>
-        <span id="meAvatar"></span>
-        <button id="logoutBtn" class="btn ghost small" title="Salir">Salir</button>
+      <div class="toprow">
+        <a href="#/" class="brand">📚 <span>Clase App</span></a>
+        <nav class="tabs" id="tabs">
+          <a href="#/" data-tab="materias">📘 Materias</a>
+          <a href="#/tareas" data-tab="tareas">✅ Tareas</a>
+          <a href="#/chat" data-tab="chat">💬 Chat <b id="chatBadge" class="badge hidden"></b></a>
+        </nav>
+        <div class="me">
+          <span id="onlineCount" class="online" title="Conectados ahora"></span>
+          <span id="meAvatar"></span>
+          <button id="logoutBtn" class="btn ghost small" title="Salir de la clase">Salir</button>
+        </div>
+      </div>
+      <div id="classbar" class="classbar hidden">
+        <div class="class-id">
+          <span id="className" class="class-name"></span>
+          <button type="button" id="copyCode" class="code-pill" title="Copiar código de la clase">
+            <span id="classCode"></span>
+            <span class="copy-label">Copiar</span>
+          </button>
+        </div>
+        <div class="class-actions">
+          <button type="button" id="shareCode" class="btn ghost small">Compartir</button>
+          <button type="button" id="classSettings" class="btn ghost small hidden">Ajustes</button>
+          <button type="button" id="switchClass" class="btn ghost small" title="Salir de esta clase y entrar a otra">Cambiar</button>
+        </div>
       </div>
     </header>
     <main id="view" class="view"></main>

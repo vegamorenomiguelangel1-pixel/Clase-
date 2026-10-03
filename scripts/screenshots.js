@@ -6,7 +6,7 @@ const api = async (p, method = 'GET', body, token) => (await fetch(BASE + p, { m
 const wait = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clase-demo-'));
-  const srv = spawn(process.execPath, ['server.js'], { cwd: APP, env: { ...process.env, PORT, CLASS_CODE: CODE, DATA_DIR: dataDir } });
+  const srv = spawn(process.execPath, ['server.js'], { cwd: APP, env: { ...process.env, PORT, CLASS_CODE: CODE, SEED: 'true', DATA_DIR: dataDir } });
   await new Promise(r => srv.stdout.on('data', d => String(d).includes('escuchando') && r()));
   const names = ['Miguel Ángel', 'Ana Quispe', 'Beto Mamani', 'Carla Rojas', 'Diego Flores', 'Lucía Vargas', 'Jorge Choque'];
   const tk = {};

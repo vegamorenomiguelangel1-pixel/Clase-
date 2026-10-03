@@ -21,7 +21,7 @@
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 && url !== '/api/login') { salir(); throw new Error(data.error || 'Sesión expirada'); }
+    if (res.status === 401 && url !== '/api/login' && url !== '/api/clases') { salir(); throw new Error(data.error || 'Sesión expirada'); }
     if (!res.ok) throw new Error(data.error || 'Error ' + res.status);
     return data;
   }
@@ -53,22 +53,90 @@
   const pidoAyuda = t => t.ayuda.some(h => h.usuario_id === yo.id);
 
   // ---------- Login ----------
-  function mostrarLogin() {
-    $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
-    const ult = localStorage.getItem('clase_ultimo_nombre'); if (ult) $('#loginForm').nombre.value = ult;
+  function modoLogin(crear) {
+    $('#tabCreate').classList.toggle('on', crear);
+    $('#tabJoin').classList.toggle('on', !crear);
+    $('#createForm').classList.toggle('hidden', !crear);
+    $('#joinForm').classList.toggle('hidden', crear);
   }
-  $('#loginForm').addEventListener('submit', async e => {
+  $('#tabJoin').onclick = () => modoLogin(false);
+  $('#tabCreate').onclick = () => modoLogin(true);
+
+  function guardarSesion(r) {
+    token = r.token; yo = r.usuario;
+    localStorage.setItem('clase_token', token);
+    localStorage.setItem('clase_usuario', JSON.stringify(yo));
+    localStorage.setItem('clase_ultimo_nombre', yo.nombre);
+  }
+  async function copiarTexto(texto) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(texto);
+      else throw new Error('sin clipboard');
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = texto; ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand('copy'); ta.remove();
+        return ok;
+      } catch { return false; }
+    }
+  }
+  function textoInvitacion() {
+    return `Únete a la clase "${yo.clase.nombre}" en Clase App. Código: ${yo.clase.codigo}`;
+  }
+  async function compartirClase() {
+    const texto = textoInvitacion();
+    if (navigator.share) {
+      try { await navigator.share({ title: yo.clase.nombre, text: texto }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    const ok = await copiarTexto(texto);
+    toast(ok ? 'Invitación copiada' : 'No se pudo copiar');
+  }
+  function mostrarCodigoCreado() {
+    $('#login').classList.add('hidden');
+    $('#creada').classList.remove('hidden');
+    $('#creadaNombre').textContent = yo.clase.nombre;
+    $('#bigCode').textContent = yo.clase.codigo;
+  }
+  function mostrarLogin() {
+    $('#app').classList.add('hidden');
+    $('#creada').classList.add('hidden');
+    $('#classbar').classList.add('hidden');
+    $('#login').classList.remove('hidden');
+    document.title = 'Clase App · Materias, tareas y chat';
+    const ult = localStorage.getItem('clase_ultimo_nombre');
+    if (ult) document.querySelectorAll('#login input[name="nombre"]').forEach(i => { if (!i.value) i.value = ult; });
+  }
+  $('#joinForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const f = e.target; $('#loginError').textContent = '';
+    const f = e.target; $('#joinError').textContent = '';
     try {
       const r = await api('/api/login', { method: 'POST', body: { nombre: f.nombre.value, codigo: f.codigo.value } });
-      token = r.token; yo = r.usuario;
-      localStorage.setItem('clase_token', token); localStorage.setItem('clase_usuario', JSON.stringify(yo));
-      localStorage.setItem('clase_ultimo_nombre', yo.nombre);
+      guardarSesion(r);
       f.codigo.value = '';
       iniciar();
-    } catch (err) { $('#loginError').textContent = err.message; }
+    } catch (err) { $('#joinError').textContent = err.message; }
   });
+  $('#createForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = e.target; $('#createError').textContent = '';
+    try {
+      const r = await api('/api/clases', { method: 'POST', body: { nombre: f.nombre.value, clase: f.clase.value } });
+      guardarSesion(r);
+      f.clase.value = '';
+      mostrarCodigoCreado();
+    } catch (err) { $('#createError').textContent = err.message; }
+  });
+  $('#copyBig').onclick = async () => {
+    const ok = await copiarTexto(yo.clase.codigo);
+    toast(ok ? 'Código copiado' : 'No se pudo copiar');
+  };
+  $('#shareBig').onclick = compartirClase;
+  $('#enterClass').onclick = () => { $('#creada').classList.add('hidden'); iniciar(); };
   function salir() {
     if (token) fetch('/api/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }).catch(() => {});
     token = null; yo = null; localStorage.removeItem('clase_token'); localStorage.removeItem('clase_usuario');
@@ -76,11 +144,13 @@
     mostrarLogin();
   }
   $('#logoutBtn').addEventListener('click', salir);
+  $('#switchClass').addEventListener('click', salir);
 
   // ---------- Inicio ----------
   async function iniciar() {
     try { yo = await api('/api/me'); } catch { return; }
-    $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
+    $('#login').classList.add('hidden'); $('#creada').classList.add('hidden'); $('#app').classList.remove('hidden');
+    pintarClase();
     $('#meAvatar').innerHTML = avatar(yo);
     usuarios = await api('/api/usuarios');
     conectarSocket();
@@ -97,7 +167,15 @@
       $('#onlineCount').textContent = `● ${ids.length} en línea`;
       document.querySelectorAll('[data-dot]').forEach(d => d.classList.toggle('on', ids.includes(Number(d.dataset.dot))));
     });
-    socket.on('usuarios:cambio', async () => { usuarios = await api('/api/usuarios'); if (rutaActual.vista === 'chat') pintarConectados(); });
+    socket.on('usuarios:cambio', async () => { usuarios = await api('/api/usuarios'); if (rutaActual.vista === 'chat') pintarConectados(); if (rutaActual.vista === 'materias') router(true); });
+    socket.on('clase:cambio', clase => {
+      if (!yo?.clase) return;
+      const cambio = yo.clase.nombre !== clase.nombre || yo.clase.codigo !== clase.codigo;
+      yo.clase = { ...yo.clase, ...clase };
+      localStorage.setItem('clase_usuario', JSON.stringify(yo));
+      pintarClase();
+      if (cambio) toast('Se actualizó el nombre o el código de la clase');
+    });
     socket.on('datos:cambio', ev => {
       const r = rutaActual;
       if (ev.eliminado && r.vista === 'materia' && ev.tipo === 'materia' && r.id === ev.id) { toast('Esta materia fue eliminada'); location.hash = '#/'; return; }
@@ -128,6 +206,41 @@
       }
     });
   }
+  function pintarClase() {
+    if (!yo?.clase) return;
+    $('#classbar').classList.remove('hidden');
+    $('#className').textContent = yo.clase.nombre;
+    $('#classCode').textContent = yo.clase.codigo;
+    $('#classSettings').classList.toggle('hidden', !yo.es_creador);
+    document.title = `${yo.clase.nombre} · Clase App`;
+  }
+  $('#copyCode').onclick = async () => {
+    if (!yo?.clase) return;
+    const ok = await copiarTexto(yo.clase.codigo);
+    const label = $('#copyCode .copy-label');
+    if (ok) { label.textContent = 'Copiado'; setTimeout(() => { label.textContent = 'Copiar'; }, 1600); }
+    toast(ok ? 'Código copiado' : 'No se pudo copiar');
+  };
+  $('#shareCode').onclick = compartirClase;
+  $('#classSettings').onclick = () => {
+    if (!yo?.es_creador) return;
+    abrirModal('Ajustes de la clase', `
+      <label>Nombre de la clase
+        <input name="nombre" required minlength="2" maxlength="80" value="${esc(yo.clase.nombre)}">
+      </label>
+      <p class="muted">Código actual: <strong>${esc(yo.clase.codigo)}</strong></p>
+      <label class="checkline"><input type="checkbox" name="regenerar"> Generar un código nuevo (el anterior dejará de funcionar)</label>`,
+      async f => {
+        if (f.regenerar.checked && !confirm('El código actual dejará de funcionar. Quien aún no haya entrado necesitará el nuevo. ¿Continuar?')) return false;
+        const body = { nombre: f.nombre.value };
+        if (f.regenerar.checked) body.regenerar = true;
+        const clase = await api('/api/clase', { method: 'PUT', body });
+        yo.clase = { ...yo.clase, ...clase };
+        localStorage.setItem('clase_usuario', JSON.stringify(yo));
+        pintarClase();
+        toast(body.regenerar ? 'Código nuevo: ' + clase.codigo : 'Nombre actualizado');
+      });
+  };
   function pintarBadge() {
     ['#chatBadge', '#chatBadge2'].forEach(s => { const b = $(s); b.textContent = noLeidos; b.classList.toggle('hidden', !noLeidos); });
   }
@@ -158,12 +271,34 @@
   }
 
   // ---------- Vista: Materias ----------
+  function vacioMaterias() {
+    if (yo.es_creador) {
+      return `<div class="empty empty-hero">
+        <div class="big">📘</div>
+        <h2>Tu clase está vacía</h2>
+        <p>Empieza de cero: no hay materias de ejemplo. Crea la primera para que el grupo tenga tareas, marcas y chat.</p>
+        <ol class="steps">
+          <li>Crea la primera materia (por ejemplo, Cálculo I o Programación).</li>
+          <li>Agrégale tareas con fecha de entrega.</li>
+          <li>Comparte el código <strong>${esc(yo.clase.codigo)}</strong> para que tus compañeros entren y marquen lo que ya hicieron.</li>
+        </ol>
+        <button class="btn primary" data-nueva-materia>＋ Crear la primera materia</button>
+      </div>`;
+    }
+    return `<div class="empty empty-hero">
+      <div class="big">📘</div>
+      <h2>Todavía no hay materias</h2>
+      <p>Esta clase empieza vacía. Cuando se cree la primera materia, todo el grupo la verá aquí. Si quieres, puedes empezar tú.</p>
+      <button class="btn primary" data-nueva-materia>＋ Crear la primera materia</button>
+    </div>`;
+  }
   async function vistaMaterias() {
     const materias = await api('/api/materias');
+    const personas = usuarios.length === 1 ? '1 persona en la clase' : `${usuarios.length} personas en la clase`;
     $('#view').innerHTML = `
       <div class="page-head">
-        <div><h1>Materias</h1><div class="muted">Hola, ${esc(yo.nombre)} 👋 · ${usuarios.length} compañeros registrados</div></div>
-        <button class="btn primary" id="nuevaMateria">＋ Nueva materia</button>
+        <div><h1>Materias</h1><div class="muted">Hola, ${esc(yo.nombre)} 👋 · ${personas}</div></div>
+        ${materias.length ? '<button class="btn primary" data-nueva-materia>＋ Nueva materia</button>' : ''}
       </div>
       ${materias.length ? `<div class="grid">${materias.map(m => `
         <a class="card materia" href="#/materia/${m.id}" style="--c:${esc(m.color)}">
@@ -180,8 +315,8 @@
             ${m.pedidos_ayuda ? `<span class="chip warn">🙋 ${m.pedidos_ayuda} ${m.pedidos_ayuda === 1 ? "pide" : "piden"} ayuda</span>` : ''}
           </div>
         </a>`).join('')}</div>`
-      : `<div class="empty"><div class="big">📘</div><p>Aún no hay materias. ¡Crea la primera!</p></div>`}`;
-    $('#nuevaMateria').onclick = () => formMateria();
+      : vacioMaterias()}`;
+    document.querySelectorAll('[data-nueva-materia]').forEach(b => b.onclick = () => formMateria());
     document.querySelectorAll('[data-edit]').forEach(b => b.onclick = e => { e.preventDefault(); formMateria(materias.find(m => m.id == b.dataset.edit)); });
     document.querySelectorAll('[data-del]').forEach(b => b.onclick = e => { e.preventDefault(); borrarMateria(materias.find(m => m.id == b.dataset.del)); });
   }
@@ -442,7 +577,7 @@
     const cerrar = () => $('#modal').classList.add('hidden');
     $('#cancelar').onclick = cerrar;
     $('#modal').onclick = e => { if (e.target.id === 'modal') cerrar(); };
-    f.onsubmit = async e => { e.preventDefault(); try { await onSubmit(f); cerrar(); } catch (err) { $('#modalError').textContent = err.message; } };
+    f.onsubmit = async e => { e.preventDefault(); try { const r = await onSubmit(f); if (r !== false) cerrar(); } catch (err) { $('#modalError').textContent = err.message; } };
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#modal').classList.add('hidden'); });
 
