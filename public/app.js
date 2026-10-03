@@ -49,6 +49,7 @@
     return hoy ? d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })
       : d.toLocaleString('es-BO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   }
+  const mismoId = (a, b) => String(a) === String(b);
   const yaHice = t => t.hechos.some(h => h.usuario_id === yo.id);
   const pidoAyuda = t => t.ayuda.some(h => h.usuario_id === yo.id);
 
@@ -165,7 +166,7 @@
     socket.on('presencia', ids => {
       conectados = ids;
       $('#onlineCount').textContent = `● ${ids.length} en línea`;
-      document.querySelectorAll('[data-dot]').forEach(d => d.classList.toggle('on', ids.includes(Number(d.dataset.dot))));
+      document.querySelectorAll('[data-dot]').forEach(d => d.classList.toggle('on', ids.some(id => mismoId(id, d.dataset.dot))));
     });
     socket.on('usuarios:cambio', async () => { usuarios = await api('/api/usuarios'); if (rutaActual.vista === 'chat') pintarConectados(); if (rutaActual.vista === 'materias') router(true); });
     socket.on('clase:cambio', clase => {
@@ -178,9 +179,9 @@
     });
     socket.on('datos:cambio', ev => {
       const r = rutaActual;
-      if (ev.eliminado && r.vista === 'materia' && ev.tipo === 'materia' && r.id === ev.id) { toast('Esta materia fue eliminada'); location.hash = '#/'; return; }
-      if (ev.eliminado && r.vista === 'tarea' && ev.tipo === 'tarea' && r.id === ev.id) { toast('Esta tarea fue eliminada'); location.hash = '#/materia/' + ev.materia_id; return; }
-      if (r.vista === 'tarea') { if (ev.id === r.id) cargarInfoTarea(); return; }
+      if (ev.eliminado && r.vista === 'materia' && ev.tipo === 'materia' && mismoId(r.id, ev.id)) { toast('Esta materia fue eliminada'); location.hash = '#/'; return; }
+      if (ev.eliminado && r.vista === 'tarea' && ev.tipo === 'tarea' && mismoId(r.id, ev.id)) { toast('Esta tarea fue eliminada'); location.hash = '#/materia/' + encodeURIComponent(ev.materia_id); return; }
+      if (r.vista === 'tarea') { if (mismoId(ev.id, r.id)) cargarInfoTarea(); return; }
       if (r.vista !== 'chat') router(true);
     });
     socket.on('estado:cambio', ({ tarea, por }) => {
@@ -193,14 +194,14 @@
     socket.on('chat:nuevo', msg => {
       const r = rutaActual;
       const sala = msg.tarea_id || null;
-      const abierta = (r.vista === 'chat' && sala === null) || (r.vista === 'tarea' && sala === r.id);
+      const abierta = (r.vista === 'chat' && sala === null) || (r.vista === 'tarea' && mismoId(sala, r.id));
       if (abierta) agregarMensaje(msg);
       else if (sala === null && msg.usuario_id !== yo.id) { noLeidos++; pintarBadge(); }
-      if (r.vista === 'tarea' && sala === r.id) $('#escribiendo') && ($('#escribiendo').textContent = '');
+      if (r.vista === 'tarea' && mismoId(sala, r.id)) $('#escribiendo') && ($('#escribiendo').textContent = '');
     });
     socket.on('escribiendo', ({ usuario, tarea_id }) => {
       const r = rutaActual; const el = $('#escribiendo'); if (!el) return;
-      if ((r.vista === 'chat' && !tarea_id) || (r.vista === 'tarea' && tarea_id === r.id)) {
+      if ((r.vista === 'chat' && !tarea_id) || (r.vista === 'tarea' && mismoId(tarea_id, r.id))) {
         el.textContent = `${usuario.nombre} está escribiendo…`;
         clearTimeout(el._t); el._t = setTimeout(() => (el.textContent = ''), 2500);
       }
@@ -251,8 +252,9 @@
     if (!token) return mostrarLogin();
     const h = location.hash.replace(/^#/, '') || '/';
     let m;
-    if ((m = h.match(/^\/materia\/(\d+)/))) rutaActual = { vista: 'materia', id: +m[1] };
-    else if ((m = h.match(/^\/tarea\/(\d+)/))) rutaActual = { vista: 'tarea', id: +m[1] };
+    const idRuta = s => { const d = decodeURIComponent(s); return /^\d+$/.test(d) ? Number(d) : d; };
+    if ((m = h.match(/^\/materia\/([^/?#]+)/))) rutaActual = { vista: 'materia', id: idRuta(m[1]) };
+    else if ((m = h.match(/^\/tarea\/([^/?#]+)/))) rutaActual = { vista: 'tarea', id: idRuta(m[1]) };
     else if (h.startsWith('/tareas')) rutaActual = { vista: 'tareas' };
     else if (h.startsWith('/chat')) rutaActual = { vista: 'chat' };
     else rutaActual = { vista: 'materias' };
@@ -301,7 +303,7 @@
         ${materias.length ? '<button class="btn primary" data-nueva-materia>＋ Nueva materia</button>' : ''}
       </div>
       ${materias.length ? `<div class="grid">${materias.map(m => `
-        <a class="card materia" href="#/materia/${m.id}" style="--c:${esc(m.color)}">
+        <a class="card materia" href="#/materia/${encodeURIComponent(m.id)}" style="--c:${esc(m.color)}">
           <div class="actions">
             <button class="icon-btn" data-edit="${m.id}" title="Editar">✏️</button>
             <button class="icon-btn" data-del="${m.id}" title="Eliminar">🗑️</button>
@@ -347,7 +349,7 @@
       <div class="top">
         <div>
           ${conMateria ? `<div class="crumbs"><span class="mat-dot" style="--c:${esc(t.materia_color)}"></span>${esc(t.materia_nombre)}</div>` : ''}
-          <h3><a href="#/tarea/${t.id}">${esc(t.titulo)}</a></h3>
+          <h3><a href="#/tarea/${encodeURIComponent(t.id)}">${esc(t.titulo)}</a></h3>
           <div class="row">
             <span class="chip ${hice ? '' : f.cls}">${f.txt}</span>
             ${t.ejemplo ? '<span class="chip ex">Ejemplo</span>' : ''}
@@ -367,16 +369,18 @@
         <button class="btn ok ${hice ? 'on' : ''}" data-hecho="${t.id}">${hice ? '✅ ¡La hice!' : '☐ Marcar como hecha'}</button>
         ${hice ? '' : `<button class="btn help ${ayuda ? 'on' : ''}" data-ayuda="${t.id}">${ayuda ? '🙋 Pediste ayuda' : '🙋 Necesito ayuda'}</button>`}
         <span class="spacer"></span>
-        <a class="btn ghost small" href="#/tarea/${t.id}">Ver detalle →</a>
+        <a class="btn ghost small" href="#/tarea/${encodeURIComponent(t.id)}">Ver detalle →</a>
       </div>
     </div>`;
   }
   let tareasCache = new Map();
+  const guardarTarea = t => { tareasCache.set(String(t.id), t); return t; };
+  const tomarTarea = id => tareasCache.get(String(id));
   function enlazarTarjetas(root = document) {
-    root.querySelectorAll('[data-hecho]').forEach(b => b.onclick = () => marcar(+b.dataset.hecho, { hecho: !yaHice(tareasCache.get(+b.dataset.hecho)) }));
-    root.querySelectorAll('[data-ayuda]').forEach(b => b.onclick = () => marcar(+b.dataset.ayuda, { ayuda: !pidoAyuda(tareasCache.get(+b.dataset.ayuda)) }));
-    root.querySelectorAll('[data-tedit]').forEach(b => b.onclick = () => formTarea(tareasCache.get(+b.dataset.tedit).materia_id, tareasCache.get(+b.dataset.tedit)));
-    root.querySelectorAll('[data-tdel]').forEach(b => b.onclick = () => borrarTarea(tareasCache.get(+b.dataset.tdel)));
+    root.querySelectorAll('[data-hecho]').forEach(b => b.onclick = () => { const t = tomarTarea(b.dataset.hecho); if (t) marcar(t.id, { hecho: !yaHice(t) }); });
+    root.querySelectorAll('[data-ayuda]').forEach(b => b.onclick = () => { const t = tomarTarea(b.dataset.ayuda); if (t) marcar(t.id, { ayuda: !pidoAyuda(t) }); });
+    root.querySelectorAll('[data-tedit]').forEach(b => b.onclick = () => { const t = tomarTarea(b.dataset.tedit); if (t) formTarea(t.materia_id, t); });
+    root.querySelectorAll('[data-tdel]').forEach(b => b.onclick = () => { const t = tomarTarea(b.dataset.tdel); if (t) borrarTarea(t); });
   }
   async function marcar(id, body) {
     try {
@@ -387,14 +391,14 @@
     } catch (e) { toast(e.message); }
   }
   function actualizarTareaEnPantalla(t) {
-    tareasCache.set(t.id, t);
+    guardarTarea(t);
     const el = document.querySelector(`[data-tarea="${t.id}"]`);
     if (el && rutaActual.vista !== 'tarea') {
       if (rutaActual.vista === 'tareas' && !pasaFiltro(t)) { el.remove(); return; }
       const tmp = document.createElement('div'); tmp.innerHTML = tarjetaTarea(t, rutaActual.vista === 'tareas');
       const nuevo = tmp.firstElementChild; el.replaceWith(nuevo); enlazarTarjetas(nuevo);
     }
-    if (rutaActual.vista === 'tarea' && rutaActual.id === t.id) pintarInfoTarea(t);
+    if (rutaActual.vista === 'tarea' && mismoId(rutaActual.id, t.id)) pintarInfoTarea(t);
   }
   function formTarea(materiaId, t) {
     abrirModal(t ? 'Editar tarea' : 'Nueva tarea', `
@@ -409,14 +413,14 @@
   }
   async function borrarTarea(t) {
     if (!confirm(`¿Eliminar la tarea "${t.titulo}"? Se borrarán también sus marcas y mensajes.`)) return;
-    try { await api('/api/tareas/' + t.id, { method: 'DELETE' }); toast('Tarea eliminada'); if (rutaActual.vista === 'tarea') location.hash = '#/materia/' + t.materia_id; else router(true); }
+    try { await api('/api/tareas/' + t.id, { method: 'DELETE' }); toast('Tarea eliminada'); if (rutaActual.vista === 'tarea') location.hash = '#/materia/' + encodeURIComponent(t.materia_id); else router(true); }
     catch (e) { toast(e.message); }
   }
 
   // ---------- Vista: Materia ----------
   async function vistaMateria(id) {
     const m = await api('/api/materias/' + id);
-    m.tareas.forEach(t => tareasCache.set(t.id, t));
+    m.tareas.forEach(guardarTarea);
     $('#view').innerHTML = `
       <div class="crumbs"><a href="#/">Materias</a> ›</div>
       <div class="page-head">
@@ -441,7 +445,7 @@
   }
   async function vistaTareas() {
     const tareas = await api('/api/tareas');
-    tareas.forEach(t => tareasCache.set(t.id, t));
+    tareas.forEach(guardarTarea);
     const lista = tareas.filter(pasaFiltro);
     const pend = tareas.filter(t => !yaHice(t)).length;
     $('#view').innerHTML = `
@@ -457,9 +461,9 @@
   // ---------- Vista: Detalle de tarea ----------
   async function vistaTarea(id) {
     const t = await api('/api/tareas/' + id);
-    tareasCache.set(t.id, t);
+    guardarTarea(t);
     $('#view').innerHTML = `
-      <div class="crumbs"><a href="#/">Materias</a> › <a href="#/materia/${t.materia_id}">${esc(t.materia_nombre)}</a> ›</div>
+      <div class="crumbs"><a href="#/">Materias</a> › <a href="#/materia/${encodeURIComponent(t.materia_id)}">${esc(t.materia_nombre)}</a> ›</div>
       <div id="tareaInfo"></div>
       <div class="section-title">💬 Conversación de esta tarea</div>
       ${cajaChat('thread')}`;
@@ -468,7 +472,7 @@
   }
   async function cargarInfoTarea() { try { pintarInfoTarea(await api('/api/tareas/' + rutaActual.id)); } catch {} }
   function pintarInfoTarea(t) {
-    tareasCache.set(t.id, t);
+    guardarTarea(t);
     const f = fechaInfo(t.fecha_entrega);
     const hice = yaHice(t), ayuda = pidoAyuda(t);
     const pct = t.total_estudiantes ? Math.round(t.hechos.length / t.total_estudiantes * 100) : 0;
@@ -563,8 +567,9 @@
   }
   function pintarConectados() {
     const el = $('#listaConectados'); if (!el) return;
-    const orden = [...usuarios].sort((a, b) => conectados.includes(b.id) - conectados.includes(a.id));
-    el.innerHTML = orden.map(u => `<div class="person"><span class="dot ${conectados.includes(u.id) ? 'on' : ''}" data-dot="${u.id}"></span>${avatar(u)}<span class="name">${esc(u.nombre)}</span></div>`).join('');
+    const enLinea = id => conectados.some(x => mismoId(x, id));
+    const orden = [...usuarios].sort((a, b) => enLinea(b.id) - enLinea(a.id));
+    el.innerHTML = orden.map(u => `<div class="person"><span class="dot ${enLinea(u.id) ? 'on' : ''}" data-dot="${esc(u.id)}"></span>${avatar(u)}<span class="name">${esc(u.nombre)}</span></div>`).join('');
   }
 
   // ---------- Modal ----------

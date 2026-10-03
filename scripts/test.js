@@ -31,7 +31,11 @@ function arrancar(env) {
   const dataDir = env.DATA_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'clase-test-'));
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, SEED: 'false', CLASS_CODE: '', RATE_CREATE_MAX: '10', RATE_JOIN_MAX: '60', ...env, DATA_DIR: dataDir },
+    env: {
+      ...process.env,
+      FIREBASE_SERVICE_ACCOUNT: '', FIREBASE_PROJECT_ID: '', GOOGLE_APPLICATION_CREDENTIALS: '', FIRESTORE_EMULATOR_HOST: '',
+      SEED: 'false', CLASS_CODE: '', RATE_CREATE_MAX: '10', RATE_JOIN_MAX: '60', ...env, DATA_DIR: dataDir,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
@@ -59,6 +63,7 @@ async function pruebaApp() {
   const sockets = [];
   try {
     console.log('Login');
+    check((await api('/api/salud')).data.almacen === 'sqlite', 'sin credenciales de Firebase se usa SQLite');
     check((await api('/api/login', { method: 'POST', body: { nombre: 'Ana', codigo: '' } })).status === 400, 'sin código → 400');
     check((await api('/api/login', { method: 'POST', body: { nombre: 'Ana', codigo: 'malo' } })).status === 401, 'código incorrecto → 401');
     const creada = await api('/api/clases', { method: 'POST', body: { nombre: 'Ana', clase: 'Física 2' } });

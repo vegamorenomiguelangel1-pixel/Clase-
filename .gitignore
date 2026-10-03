@@ -3,3 +3,8 @@ data/
 *.db
 *.db-*
 .env
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

@@ -27,8 +27,9 @@ Hay más capturas en la carpeta [`screenshots/`](screenshots/).
 ## Tecnologías
 
 - **Node.js + Express** (servidor y API REST)
-- **Socket.io** (tiempo real: marcas y chat, por clase)
-- **SQLite** con `better-sqlite3` (un solo archivo de base de datos, sin instalar nada aparte)
+- **Socket.io** (tiempo real: marcas y chat, por clase). El tiempo real no pasa por Firestore: el servidor avisa a los que están conectados.
+- **Firestore** (Firebase) cuando configuras la cuenta de servicio: los datos quedan en la nube y sobreviven a un redespliegue.
+- **SQLite** con `better-sqlite3` si no hay credenciales de Firebase (tu compu y `npm test`).
 - Frontend en **HTML + CSS + JavaScript puro** (`public/`), sin compilación
 
 ## Cómo correrlo en tu compu
@@ -57,10 +58,13 @@ Si ya entraste antes, usa el **mismo nombre** en esa clase para recuperar tus ma
 
 | Variable | Para qué sirve | Por defecto |
 |---|---|---|
+| `FIREBASE_PROJECT_ID` | Id del proyecto Firebase. Junto con una credencial, activa Firestore. | (apagado: se usa SQLite) |
+| `FIREBASE_SERVICE_ACCOUNT` | JSON de la cuenta de servicio, en **una sola línea**. Es el secreto del servidor. | (vacío) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Ruta al mismo JSON, si prefieres un archivo en vez de pegar el JSON. Sustituye a `FIREBASE_SERVICE_ACCOUNT`. | (vacío) |
 | `PORT` | Puerto del servidor | `3000` |
-| `DATA_DIR` | Carpeta donde se guarda `clase.db` (SQLite) | `./data` |
+| `DATA_DIR` | Carpeta de `clase.db` **solo en modo SQLite** | `./data` |
 | `SEED` | Solo si vale `true` se crea una clase demo con datos de ejemplo. Las clases que cree la gente siguen vacías. | (apagado) |
-| `CLASS_CODE` | Opcional. Código de la clase demo cuando `SEED=true`. Si ya tenías una base de la versión anterior, es el código con el que se migra esa clase la primera vez. | `CLASE2026` al migrar; si no, se genera |
+| `CLASS_CODE` | Opcional. Código de la clase demo cuando `SEED=true`. En SQLite, si ya tenías una base vieja, es el código de esa migración. | `CLASE2026` al migrar SQLite; si no, se genera |
 | `RATE_CREATE_MAX` | Máximo de clases nuevas por IP en la ventana | `10` |
 | `RATE_JOIN_MAX` | Máximo de intentos de unirse por IP en la ventana | `60` |
 
@@ -82,36 +86,93 @@ Si ya tenías `data/clase.db` de la versión de una sola clase, al arrancar se c
 
 Para empezar de cero, detén el servidor y borra la carpeta `data/`.
 
-## Publicarlo gratis para que lo use la clase
+## Guardar los datos en Firebase (Firestore)
 
-### Opción A: Render (gratis)
+Sin estas variables el servidor usa un archivo SQLite en el disco. En Render el disco gratis se borra al redesplegar, así que para que las clases sobrevivan hay que usar Firestore. El navegador **no** habla con Firebase: solo el servidor Node, con la cuenta de servicio. El chat y las marcas en vivo siguen yendo por Socket.io.
 
-1. Sube esta carpeta a un repositorio de **GitHub** (el `.gitignore` ya excluye `node_modules` y `data`).
-2. Entra a [render.com](https://render.com) → **New +** → **Web Service** → conecta tu repo.
-3. Configura:
-   - **Runtime:** Node
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-   - **Instance type:** Free
-4. **Deploy**. Render te da una URL tipo `https://clase-app.onrender.com`. Compártela: cada grupo crea su clase y pasa su código.
+En Firestore cada clase es un documento `classes/{id}` con sus propias subcolecciones `materias`, `tareas`, `users`, `statuses` y `messages`. Así una clase no puede leer los datos de otra. Además hay tres colecciones de apoyo, también solo de servidor: `codigos` (el código de entrada apunta a una clase, y no se puede repetir), `sessions` (el token de quien ya entró) y `meta` (si ya se sembró la clase demo).
 
-(También puedes usar **New + → Blueprint**: el archivo `render.yaml` ya trae esta configuración, con `SEED=false`.)
+### 1. Crear el proyecto
 
-⚠️ **Importante con el plan gratis de Render:**
-- El servicio "se duerme" tras ~15 min sin visitas; la primera visita tarda ~1 minuto en despertar.
-- El disco **no es persistente**: al redesplegar o reiniciar, **se borran** la base de datos (clases, tareas, marcas y mensajes). Sirve para demos. Para uso real, usa un disco persistente (de pago en Render) con `DATA_DIR` apuntando a él, o usa Railway con un volumen (abajo).
+1. Entra a [console.firebase.google.com](https://console.firebase.google.com) → **Agregar proyecto**. Ponle un nombre y crea el proyecto. Puedes desactivar Analytics.
+2. En **Configuración del proyecto** (el engranaje) → **General**, copia el **ID del proyecto**. Ese valor es `FIREBASE_PROJECT_ID`.
 
-### Opción B: Railway (con volumen, los datos se mantienen)
+### 2. Activar Firestore
 
-1. Sube el proyecto a GitHub.
-2. En [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
-3. En **Variables** agrega `DATA_DIR=/data` (y `SEED=false` si quieres dejarlo explícito).
-4. En el servicio → **Settings / Volumes** → **Add Volume** con *mount path* `/data` (así la base SQLite sobrevive a reinicios).
-5. En **Settings → Networking** pulsa **Generate Domain** para obtener la URL pública.
+1. En el menú, **Compilación → Firestore Database → Crear base de datos**.
+2. Elige **modo nativo** (no Datastore).
+3. Ubicación: la más cercana (por ejemplo `us-central1` o `southamerica-east1`).
+4. Al empezar, el asistente puede dejarte en **modo de prueba**. No lo dejes así: en el paso 4 se cierra el acceso desde el navegador.
 
-Railway da un crédito gratuito de prueba; revisa sus condiciones actuales porque cambian seguido.
+### 3. Crear la cuenta de servicio
 
-> Railway y Render ponen el `PORT` solos; no hace falta configurarlo. Detrás de un proxy la app usa la IP real del visitante para el límite de intentos.
+1. **Configuración del proyecto → Cuentas de servicio**.
+2. **Generar nueva clave privada** (Firebase Admin SDK). Se descarga un archivo `.json`.
+3. **No lo subas a GitHub** ni lo pegues en el frontend. El `.gitignore` ya ignora `serviceAccount*.json`.
+4. Para Render o Railway necesitas el contenido del archivo en **una sola línea**. En tu compu:
+
+```bash
+node -e "console.log(JSON.stringify(require('./serviceAccount.json')))"
+```
+
+Esa línea es el valor de `FIREBASE_SERVICE_ACCOUNT`.
+
+En tu compu, si prefieres no pegar el JSON, puedes apuntar al archivo:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="$PWD/serviceAccount.json"
+export FIREBASE_PROJECT_ID="tu-id-de-proyecto"
+npm start
+```
+
+Hace falta **una** de las dos formas de credencial, más el id del proyecto. Si el JSON ya trae `project_id`, el servidor lo usa cuando `FIREBASE_PROJECT_ID` no está definido.
+
+### 4. Cerrar las reglas (nadie entra desde el navegador)
+
+La cuenta de servicio **ignora** las reglas: el servidor sigue pudiendo leer y escribir. Las reglas solo frenan al SDK de cliente. En **Firestore → Reglas**, pega esto y pulsa **Publicar** (es el archivo `firestore.rules` del repo):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+```
+
+Si alguien abre la consola del navegador, no puede leer las clases ni los mensajes. Todo pasa por tu API.
+
+### 5. Publicar el servidor Node
+
+Sube el repo a GitHub (sin el JSON de la cuenta y sin `node_modules` ni `data/`).
+
+#### Render (plan gratis)
+
+1. [render.com](https://render.com) → **New +** → **Web Service** → conecta el repo.
+2. **Runtime:** Node. **Build Command:** `npm install`. **Start Command:** `npm start`. **Instance type:** Free.
+3. En **Environment** agrega:
+   - `FIREBASE_PROJECT_ID` = el id del proyecto
+   - `FIREBASE_SERVICE_ACCOUNT` = la línea JSON (secreto)
+   - `SEED` = `false`
+4. **Deploy**. La URL queda tipo `https://clase-app.onrender.com`. Ábrela y crea una clase: al recargar o redesplegar, la clase sigue en Firestore.
+
+También puedes usar **New + → Blueprint** con `render.yaml`: te pedirá esas dos variables.
+
+El plan gratis se duerme tras unos 15 minutos sin visitas; la primera carga puede tardar un minuto. Con Firestore los datos no se pierden al despertar.
+
+#### Railway
+
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
+2. En **Variables** agrega `FIREBASE_PROJECT_ID` y `FIREBASE_SERVICE_ACCOUNT` (y `SEED=false` si quieres dejarlo explícito).
+3. **Settings → Networking → Generate Domain**.
+
+No hace falta un volumen: los datos están en Firestore. `PORT` lo pone la plataforma.
+
+> Detrás de Render o Railway la app usa la IP real del visitante para el límite de intentos.
+
+Comprueba el modo en `GET /api/salud`. Responde `{"ok":true,"almacen":"firestore"}` cuando las credenciales están bien, o `"almacen":"sqlite"` si faltan.
 
 ## Pruebas automáticas
 
@@ -119,7 +180,13 @@ Railway da un crédito gratuito de prueba; revisa sus condiciones actuales porqu
 npm test
 ```
 
-Levanta servidores temporales (con una base de datos aparte, no toca tus datos) y prueba: crear y unirse a una clase, códigos incorrectos, permisos, crear/editar/eliminar materias y tareas, **dos clientes Socket.io** de la misma clase, que **otra clase no ve** marcas ni chat, que una clase nueva nace vacía, la migración de una base antigua y los límites por IP.
+`npm test` usa **SQLite** (borra las variables de Firebase a propósito) y no toca tu proyecto en la nube. Prueba: crear y unirse a una clase, códigos incorrectos, permisos, materias y tareas, **dos clientes Socket.io** de la misma clase, que **otra clase no ve** marcas ni chat, que una clase nueva nace vacía, la migración de una base antigua y los límites por IP.
+
+Si tienes [Java](https://www.oracle.com/java/), puedes repetir el aislamiento contra el emulador local. La primera vez `npx` descarga la CLI de Firebase:
+
+```bash
+npm run test:firestore
+```
 
 Las capturas se generan con `scripts/screenshots.js` (necesita `puppeteer-core` y Google Chrome/Chromium; no está en las dependencias para que `npm install` siga siendo liviano). Ese script arranca con `SEED=true` para tener datos que fotografiar.
 
@@ -128,7 +195,9 @@ Las capturas se generan con `scripts/screenshots.js` (necesita `puppeteer-core` 
 ```
 ./
 ├── server.js          # Express + API REST + Socket.io
+├── store/             # SQLite o Firestore, la misma API
 ├── db.js              # Esquema SQLite, migración y clase demo opcional
+├── firestore.rules    # Niega todo acceso desde el navegador
 ├── public/
 │   ├── index.html     # Página única
 │   ├── styles.css     # Estilos (responsive)
@@ -166,4 +235,5 @@ Eventos Socket.io (solo dentro de la sala de la clase): `chat:enviar` / `chat:nu
 - Hay un límite de creaciones de clase y de intentos de unión **por IP**, para frenar abusos. En un WiFi compartido (el aula) el de unirse es amplio a propósito.
 - No hay notificaciones push al celular ni archivos adjuntos en el chat.
 - El "total de estudiantes" del progreso (`x/20`) son las personas que entraron alguna vez **a esa clase**.
-- SQLite es ideal para varias clases chicas. Para muchísimos usuarios a la vez conviene PostgreSQL.
+- Firestore aguanta mejor que un archivo SQLite cuando hay muchas clases a la vez. El tiempo real sigue en la memoria del servidor (Socket.io): si hay varias copias del servidor, un aviso no salta de una copia a otra.
+- La clave de la cuenta de servicio es un secreto. Quien la tiene puede leer y escribir toda la base, porque el Admin SDK no obedece las reglas.
