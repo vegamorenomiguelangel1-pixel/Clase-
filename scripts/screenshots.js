@@ -1,0 +1,54 @@
+const { spawn } = require('child_process');
+const fs = require('fs'), os = require('os'), path = require('path');
+const puppeteer = require(process.env.PUPPETEER_PATH || 'puppeteer-core');
+const APP = path.join(__dirname, '..'), OUT = APP + '/screenshots', PORT = 3998, BASE = 'http://localhost:' + PORT, CODE = 'CLASE2026';
+const api = async (p, method = 'GET', body, token) => (await fetch(BASE + p, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body && JSON.stringify(body) })).json();
+const wait = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clase-demo-'));
+  const srv = spawn(process.execPath, ['server.js'], { cwd: APP, env: { ...process.env, PORT, CLASS_CODE: CODE, DATA_DIR: dataDir } });
+  await new Promise(r => srv.stdout.on('data', d => String(d).includes('escuchando') && r()));
+  const names = ['Miguel Ángel', 'Ana Quispe', 'Beto Mamani', 'Carla Rojas', 'Diego Flores', 'Lucía Vargas', 'Jorge Choque'];
+  const tk = {};
+  for (const n of names) tk[n] = (await api('/api/login', 'POST', { nombre: n, codigo: CODE })).token;
+  const tareas = await api('/api/tareas', 'GET', null, tk[names[0]]);
+  const marca = (n, t, b) => api(`/api/tareas/${t}/estado`, 'PUT', b, tk[n]);
+  const id = k => tareas.find(t => t.titulo.includes(k)).id; const t1 = id('Límites'), t3 = id('Proyecto'), t4 = id('Derivadas');
+  for (const n of ['Ana Quispe', 'Carla Rojas', 'Lucía Vargas', 'Jorge Choque']) await marca(n, t1, { hecho: true });
+  await marca('Beto Mamani', t1, { ayuda: true }); await marca('Diego Flores', t1, { ayuda: true });
+  for (const n of ['Miguel Ángel', 'Ana Quispe', 'Beto Mamani', 'Carla Rojas', 'Diego Flores']) await marca(n, t4, { hecho: true });
+  await marca('Ana Quispe', t3, { hecho: true }); await marca('Miguel Ángel', t3, { ayuda: true });
+  const msg = (n, texto, tarea_id) => api('/api/mensajes', 'POST', { texto, tarea_id }, tk[n]);
+  await msg('Ana Quispe', '¡Hola a todos! Ya subí la práctica de límites 💪');
+  await msg('Beto Mamani', 'Alguien sabe si la práctica es individual o en grupo?');
+  await msg('Carla Rojas', 'Individual, lo dijo el lic. en la última clase');
+  await msg('Miguel Ángel', 'Gracias! Mañana nos juntamos en la biblioteca para repasar?');
+  await msg('Lucía Vargas', 'Yo me apunto 🙋‍♀️');
+  await msg('Beto Mamani', '@Ana Quispe ¿me ayudas con el ejercicio 7? No me sale la indeterminación', t1);
+  await msg('Ana Quispe', 'Claro! Multiplica por el conjugado y luego simplificas 👍', t1);
+
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--lang=es-BO'] });
+  const shot = async (name, hash, { mobile = false, login = true, after } = {}) => {
+    const page = await browser.newPage();
+    await page.setViewport(mobile ? { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { width: 1280, height: 860 });
+    await page.goto(BASE + '/');
+    if (login) await page.evaluate(t => localStorage.setItem('clase_token', t), tk['Miguel Ángel']);
+    else await page.evaluate(() => localStorage.clear());
+    await page.goto(BASE + '/' + hash); await page.reload();
+    await page.waitForSelector('#view > *', { timeout: 5000 }).catch(() => {}); await wait(900); if (after) { await after(page); await wait(500); }
+    await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: !mobile && !hash.includes('chat') });
+    console.log('ok', name); await page.close();
+  };
+  await shot('01-login', '', { login: false, after: p => p.type('input[name=nombre]', 'Miguel Ángel') });
+  await shot('02-materias', '#/');
+  await shot('03-materia-tareas', '#/materia/1');
+  await shot('04-todas-las-tareas', '#/tareas', { after: p => p.click('[data-f=todas]') });
+  await shot('05-detalle-tarea-y-chat', '#/tarea/' + t1);
+  await shot('06-chat-general', '#/chat');
+  await shot('07-nueva-tarea-modal', '#/materia/1', { after: async p => { await p.waitForSelector('#nuevaT'); await p.click('#nuevaT'); await p.type('input[name=titulo]', 'Práctica 4: Continuidad'); } });
+  await shot('08-movil-materias', '#/', { mobile: true });
+  await shot('09-movil-tarea', '#/tarea/' + t1, { mobile: true });
+  await shot('10-movil-chat', '#/chat', { mobile: true });
+  await browser.close(); srv.kill(); fs.rmSync(dataDir, { recursive: true, force: true });
+})().catch(e => { console.error(e); process.exit(1); });
+process.on('exit', () => { try { require('child_process').execSync('fuser -k 3998/tcp 2>/dev/null') } catch {} });

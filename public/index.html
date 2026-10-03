@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#4f46e5">
+  <title>Clase App · Materias, tareas y chat</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Pantalla de ingreso -->
+  <section id="login" class="login hidden">
+    <form id="loginForm" class="login-card">
+      <div class="logo">📚</div>
+      <h1>Clase App</h1>
+      <p class="muted">Materias, tareas y chat de nuestro curso</p>
+      <label>Tu nombre
+        <input name="nombre" autocomplete="name" placeholder="Ej: Miguel Ángel" required minlength="2" maxlength="40">
+      </label>
+      <label>Código de la clase
+        <input name="codigo" placeholder="Te lo pasa el delegado" required autocomplete="off">
+      </label>
+      <p id="loginError" class="error"></p>
+      <button class="btn primary block" type="submit">Entrar</button>
+      <p class="hint">Si ya entraste antes, usa el mismo nombre para recuperar tus marcas.</p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <a href="#/" class="brand">📚 <span>Clase App</span></a>
+      <nav class="tabs" id="tabs">
+        <a href="#/" data-tab="materias">📘 Materias</a>
+        <a href="#/tareas" data-tab="tareas">✅ Tareas</a>
+        <a href="#/chat" data-tab="chat">💬 Chat <b id="chatBadge" class="badge hidden"></b></a>
+      </nav>
+      <div class="me">
+        <span id="onlineCount" class="online" title="Conectados ahora"></span>
+        <span id="meAvatar"></span>
+        <button id="logoutBtn" class="btn ghost small" title="Salir">Salir</button>
+      </div>
+    </header>
+    <main id="view" class="view"></main>
+    <nav class="bottomnav" id="bottomnav">
+      <a href="#/" data-tab="materias"><span>📘</span>Materias</a>
+      <a href="#/tareas" data-tab="tareas"><span>✅</span>Tareas</a>
+      <a href="#/chat" data-tab="chat"><span>💬</span>Chat<b id="chatBadge2" class="badge hidden"></b></a>
+    </nav>
+  </div>
+
+  <!-- Modal genérico -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <h2 id="modalTitle"></h2>
+      <form id="modalForm"></form>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
